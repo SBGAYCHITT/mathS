@@ -75,14 +75,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .brand:hover { text-decoration: none; }
 
 .brand-mark {
-  width: 34px; height: 34px;
-  display: grid; place-items: center;
+  width: 36px; height: 36px;
+  display: block;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--blue-500), var(--blue-700));
-  color: #fff;
-  font-size: 19px;
-  font-weight: 700;
   box-shadow: 0 4px 12px rgba(37, 99, 235, .25);
+  flex: 0 0 auto;
 }
 
 .brand-text { font-size: 17px; font-weight: 600; letter-spacing: .2px; }
