@@ -5,6 +5,7 @@
   'use strict';
 
   var BANK = window.MATH_BANK;
+  var COURSES = window.MATH_COURSES || { lessons: [] };
   var app = document.getElementById('app');
   if (!BANK || !app) return;
 
@@ -37,7 +38,8 @@
     custom: 'maths_custom_v1',
     progress: 'maths_progress_v1',
     daily: 'maths_daily_v1',
-    days: 'maths_days_v1'
+    days: 'maths_days_v1',
+    course: 'maths_course_v1'
   };
   function getK(k, d) {
     try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }
@@ -139,6 +141,57 @@
     var s = stateOf(id);
     s.drills[idx] = !!ok;
     setK(K.progress, progress);
+  }
+
+  /* ---------- 知识点课程 / 巩固练习 ---------- */
+  var courseProg = getK(K.course, {});   // { 知识点: { done:[bool x5], answer:{0:'我的答案'} } }
+  function lessonOf(kp) {
+    return COURSES.lessons.filter(function (l) { return l.kp === kp; })[0];
+  }
+  function courseRec(kp) {
+    if (!courseProg[kp]) courseProg[kp] = { done: [], answer: {} };
+    if (!courseProg[kp].done) courseProg[kp].done = [];
+    if (!courseProg[kp].answer) courseProg[kp].answer = {};
+    return courseProg[kp];
+  }
+  function courseDoneCount(kp) {
+    var l = lessonOf(kp);
+    if (!l) return 0;
+    var r = courseProg[kp];
+    if (!r || !r.done) return 0;
+    return (l.practice || []).filter(function (_, i) { return r.done[i] === true; }).length;
+  }
+  function recordCourseAnswer(kp, idx, ok, input) {
+    var r = courseRec(kp);
+    r.done[idx] = !!ok;
+    r.answer[idx] = input;
+    setK(K.course, courseProg);
+  }
+  function diagramHtml(d) {
+    if (!d) return '';
+    if (d.t === 'flow') {
+      return '<div class="dia dia-flow">' + (d.steps || []).map(function (s, i) {
+        return (i ? '<span class="arrow">→</span>' : '') + '<span class="flow-step">' + esc(s) + '</span>';
+      }).join('') + '</div>';
+    }
+    if (d.t === 'bars') {
+      return '<div class="dia dia-bars">' + (d.label ? '<div class="dia-label">' + esc(d.label) + '</div>' : '') +
+        '<div class="bars-track">' + (d.parts || []).map(function (p) {
+          return '<div class="bar-seg ' + esc(p.c || 'blue') + '" style="width:' + (parseFloat(p.w) || 0) + '%"><span>' + esc(p.n) + '</span></div>';
+        }).join('') + '</div></div>';
+    }
+    if (d.t === 'note') return '<div class="dia dia-note">' + esc(d.text) + '</div>';
+    return '<div class="dia dia-formula">' + esc(d.text || '') + '</div>';
+  }
+  function lessonBodyHtml(l) {
+    if (!l) return '<div class="muted small">这节课的图文内容还在整理中，可以先看下面的配套练习。</div>';
+    return (l.sections || []).map(function (s, i) {
+      return '<div class="lesson-sec">' +
+        '<h4><span class="sec-n">' + (i + 1) + '</span> ' + esc(s.h || '') + '</h4>' +
+        (s.p ? '<p>' + nl2br(s.p) + '</p>' : '') +
+        diagramHtml(s.diagram) +
+        '</div>';
+    }).join('');
   }
 
   /* ---------- 打卡（当天固定 2 题） ---------- */
@@ -286,6 +339,7 @@
         '<p>按课程分类练习，做题后立刻看讲解、原题和举一反三。题库题目持续补充，支持拍照录入，数据保存在你自己的浏览器里。</p>' +
         '<div class="hero-actions row">' +
           '<a class="btn btn-lg" href="#/checkin">开始今日打卡</a>' +
+          '<a class="btn btn-lg btn-ghost" href="#/courses">看知识点课程</a>' +
           '<a class="btn btn-lg btn-ghost" href="#/bank">浏览题库</a>' +
           (wrongQuestions().length ? '<a class="btn btn-lg btn-ghost" href="#/wrong">错题本（' + wrongQuestions().length + '）</a>' : '') +
         '</div>' +
@@ -298,6 +352,13 @@
       '</div>' +
       '<div class="sec-title">今日打卡 <a class="more" href="#/checkin">查看全部 →</a></div>' +
       '<div class="grid grid-2">' + cards + '</div>' +
+      '<div class="sec-title">按知识点学课程 <a class="more" href="#/courses">全部课程 →</a></div>' +
+      '<div class="grid grid-3">' + COURSES.lessons.slice(0, 3).map(function (l) {
+        return '<a class="course-card" href="#/course/' + encodeURIComponent(l.kp) + '">' +
+          '<div class="spread"><span class="badge">知识点课程</span></div>' +
+          '<h3>' + esc(l.title || l.kp) + '</h3><p>' + esc(l.intro || '') + '</p>' +
+          '<div class="foot small muted">图文讲解 · ' + (l.practice || []).length + ' 道练习</div></a>';
+      }).join('') + '</div>' +
       '<div class="sec-title">按课程分类练习 <a class="more" href="#/bank">全部 15 类 →</a></div>' +
       '<div class="grid grid-3">' + BANK.categories.slice(0, 6).map(catCard).join('') + '</div>' +
       '<div class="notice mt24">' + esc(BANK.meta.disclaimer) + '</div>';
@@ -357,6 +418,7 @@
       var label = st === 'yellow' ? '已掌握' : st === 'green' ? '做对了' : '待攻克';
       var cls = st === 'yellow' ? 'ok' : st === 'green' ? 'ok' : 'err';
       var c = catById(q.categoryId);
+      var hasLesson = !!lessonOf(q.knowledgePoint);
       return '<article class="q-row wrong-row">' +
         '<span class="qdot-lg ' + (st || 'red') + '"></span>' +
         '<div class="body">' +
@@ -368,6 +430,12 @@
         '</div>' +
         '<a class="btn btn-sm" href="#/q/' + encodeURIComponent(q.level) + '/' + encodeURIComponent(q.id) + '">' +
           (st === 'yellow' ? '再看一遍' : '再做一遍') + '</a>' +
+        (hasLesson ? '<button class="btn btn-sm btn-soft" data-act="toggle-cons" data-cons="cons_' + esc(q.id) + '">知识点巩固 ▾</button>' : '') +
+        '<div class="wrong-cons" id="cons_' + esc(q.id) + '" style="display:none">' +
+          '<div class="cons-head">知识点巩固：' + esc(q.knowledgePoint) +
+            ' <a href="#/course/' + encodeURIComponent(q.knowledgePoint) + '">看完整课程 →</a></div>' +
+          consolidateHtml(q.knowledgePoint) +
+        '</div>' +
       '</article>';
     }).join('');
 
@@ -389,6 +457,154 @@
     var d0 = s.drills[0] === true ? '✓' : '·';
     var d1 = s.drills[1] === true ? '✓' : '·';
     return '举一反三 ' + d0 + ' ' + d1;
+  }
+
+  /* ---------- 课程中心 / 课程详情 ---------- */
+  function viewCourses(catId) {
+    var lessons = COURSES.lessons;
+    var cat = catId ? BANK.categories.filter(function (c) { return c.id === catId; })[0] : null;
+    var list = cat ? lessons.filter(function (l) { return l.categoryId === catId; }) : lessons;
+    var tabs = '<button class="level-tab ' + (cat ? '' : 'active') + '" data-act="course-cat" data-cat="">全部知识点</button>' +
+      BANK.categories.map(function (c) {
+        var n = lessons.filter(function (l) { return l.categoryId === c.id; }).length;
+        if (!n) return '';
+        return '<button class="level-tab ' + (catId === c.id ? 'active' : '') + '" data-act="course-cat" data-cat="' + c.id + '">' +
+          pad(c.index) + ' ' + esc(c.name) + '</button>';
+      }).join('');
+    var cards = list.map(function (l) {
+      var c = BANK.categories.filter(function (x) { return x.id === l.categoryId; })[0];
+      var done = courseDoneCount(l.kp);
+      var total = (l.practice || []).length;
+      var pct = total ? Math.round(done / total * 100) : 0;
+      return '<a class="course-card" href="#/course/' + encodeURIComponent(l.kp) + '">' +
+        '<div class="spread"><span class="badge">' + (c ? '第' + pad(c.index) + '讲 · ' + esc(c.name) : esc(l.categoryId)) + '</span>' +
+        (done === total && total ? '<span class="badge mastered">✓ 学完</span>' : done ? '<span class="badge ok">' + done + '/' + total + '</span>' : '') + '</div>' +
+        '<h3>' + esc(l.title || l.kp) + '</h3>' +
+        '<p>' + esc(l.intro || '') + '</p>' +
+        '<div class="course-progress"><span style="width:' + pct + '%"></span></div>' +
+        '<div class="foot small muted">图文讲解 · ' + total + ' 道配套练习' + (done ? ' · 已做对 ' + done : '') + '</div>' +
+        '</a>';
+    }).join('');
+    var learnedCount = lessons.filter(function (l) { return courseDoneCount(l.kp) === (l.practice || []).length && (l.practice || []).length; }).length;
+    return '' +
+      '<div class="page-head"><h1>课程中心</h1><p>每个知识点都有图文讲解和 5 道配套练习。看懂了再做题，学得更牢。</p></div>' +
+      '<div class="grid grid-4 stats">' +
+        '<div class="stat"><div class="stat-num">' + lessons.length + '</div><div class="stat-label">知识点课程</div></div>' +
+        '<div class="stat"><div class="stat-num">' + lessons.reduce(function (a, l) { return a + (l.practice || []).length; }, 0) + '</div><div class="stat-label">配套练习题</div></div>' +
+        '<div class="stat"><div class="stat-num">' + learnedCount + '</div><div class="stat-label">已学完课程</div></div>' +
+        '<div class="stat"><div class="stat-num">' + BANK.categories.length + '</div><div class="stat-label">课程分类</div></div>' +
+      '</div>' +
+      '<div class="level-tabs mt16">' + tabs + '</div>' +
+      '<div class="grid grid-3 mt16">' + (cards || '<div class="empty">这个分类暂时没有课程</div>') + '</div>' +
+      '<div class="notice mt16">讲解视频暂未录入；每个知识点提供了搜索关键词，你可以自行查找合适的视频。图文讲解和练习题已完整可用。</div>';
+  }
+
+  function practiceHtml(l) {
+    var kp = l.kp;
+    var r = courseRec(kp);
+    var rows = (l.practice || []).map(function (p, i) {
+      var ok = r.done[i] === true;
+      var tried = r.done[i] === false;
+      var my = r.answer[i];
+      var id = 'cp_' + i;
+      return '<div class="practice-item">' +
+        '<div class="practice-head"><span class="practice-n">练习 ' + (i + 1) + '</span>' +
+        (ok ? '<span class="badge ok">✓ 做对了</span>' : tried ? '<span class="badge err">✕ 再看讲解</span>' : '<span class="badge gray">待作答</span>') + '</div>' +
+        '<div class="q-text">' + nl2br(p.q) + '</div>' +
+        (ok ? '<div class="practice-ok">你答对了！' + (p.ex ? ' ' + esc(p.ex) : '') + '</div>' :
+          '<div class="row mt8">' +
+            '<input class="input-answer" type="text" id="' + id + '" value="' + esc(my || '') + '" placeholder="输入你的答案" />' +
+            '<button class="btn btn-sm" data-act="course-submit" data-kp="' + esc(kp) + '" data-i="' + i + '">提交</button>' +
+          '</div>' +
+          (p.hint ? '<div class="small muted mt8">提示：' + esc(p.hint) + '</div>' : '') +
+          (tried && p.ex ? '<div class="explain-note">' + nl2br(p.ex) + '</div>' : '')) +
+        '</div>';
+    }).join('');
+    var done = courseDoneCount(kp);
+    return '<div class="card mt16">' +
+      '<div class="panel-title"><span class="n">4</span> 配套练习 ' +
+        '<span class="badge ' + (done === (l.practice || []).length ? 'ok' : '') + '">' + done + ' / ' + (l.practice || []).length + ' 做对</span></div>' +
+      '<p class="small muted">每题提交后立刻判分。做错了会显示讲解，可以重新输入再提交。</p>' +
+      '<div class="practice-list">' + rows + '</div>' +
+      (done === (l.practice || []).length && (l.practice || []).length ? '<div class="notice mt12">这一课的 5 道题全做对了，掌握得不错！</div>' : '') +
+      '</div>';
+  }
+
+  function viewCourse(kp) {
+    var l = lessonOf(kp);
+    if (!l) return '<div class="empty"><h3>没有找到这节课</h3><a class="btn" href="#/courses">返回课程中心</a></div>';
+    var c = BANK.categories.filter(function (x) { return x.id === l.categoryId; })[0];
+    var related = allQuestions().filter(function (q) { return q.knowledgePoint === l.kp; });
+    var kpLearned = isLearned(l.kp);
+    var video = l.video || {};
+    var main =
+      '<div class="card">' +
+        '<div class="panel-title"><span class="n">1</span> 图文讲解</div>' +
+        lessonBodyHtml(l) +
+        ((l.keyPoints || []).length ? '<div class="key-box"><h5>本课要点</h5><ul class="clean">' +
+          l.keyPoints.map(function (x) { return '<li>' + nl2br(x) + '</li>'; }).join('') + '</ul></div>' : '') +
+        ((l.pitfalls || []).length ? '<div class="pit-box"><h5>容易错在哪</h5><ul class="clean">' +
+          l.pitfalls.map(function (x) { return '<li>' + nl2br(x) + '</li>'; }).join('') + '</ul></div>' : '') +
+      '</div>' +
+      '<div class="card mt16">' +
+        '<div class="panel-title"><span class="n">2</span> 讲解视频</div>' +
+        (video.status === 'ready' && video.url
+          ? '<div class="video-ready"><div class="video-embed">' +
+              (String(video.url).indexOf('youtu') >= 0 || String(video.url).indexOf('.mp4') >= 0
+                ? '<a class="btn" href="' + esc(video.url) + '" target="_blank" rel="noopener">▶ 打开讲解视频</a>'
+                : '<iframe src="' + esc(video.url) + '" frameborder="0" allowfullscreen loading="lazy"></iframe>') +
+              '</div>' + (video.title ? '<div class="small muted mt8">' + esc(video.title) + '</div>' : '') + '</div>'
+          : '<div class="video-pending">' +
+              '<div class="video-icon">▶</div>' +
+              '<div><strong>讲解视频待补充</strong>' +
+              '<div class="small muted mt8">暂时没有可以确认的讲解视频。想看视频时，可以复制下面的关键词到视频网站搜索，自己挑选合适的讲解。</div>' +
+              '<div class="video-kw">' + esc(video.keyword || (l.kp + ' 讲解')) + '</div>' +
+              '<button class="btn btn-sm btn-ghost mt8" data-act="copy-kw" data-kw="' + esc(video.keyword || l.kp) + '">复制关键词</button>' +
+              '</div></div>') +
+      '</div>' +
+      practiceHtml(l);
+
+    var side =
+      '<div class="card">' +
+        '<h4>本课信息</h4>' +
+        '<dl class="kv mt12">' +
+          '<dt>知识点</dt><dd>' + esc(l.kp) + '</dd>' +
+          '<dt>所属分类</dt><dd>' + esc(c ? ('第' + pad(c.index) + '讲 ' + c.name) : l.categoryId) + '</dd>' +
+          '<dt>练习进度</dt><dd>' + courseDoneCount(l.kp) + ' / ' + (l.practice || []).length + ' 做对</dd>' +
+        '</dl>' +
+        '<div class="mt16"><button class="btn btn-sm ' + (kpLearned ? 'btn-soft' : 'btn-ghost') + ' btn-block" data-act="learn" data-kp="' + esc(l.kp) + '">' +
+          (kpLearned ? '✓ 已学（点击取消）' : '标记为已学') + '</button></div>' +
+      '</div>' +
+      (related.length ? '<div class="card mt16"><h4>题库里的相关题</h4>' +
+        '<div class="data-list">' + related.map(function (q) {
+          return '<a class="data-item" href="#/q/' + encodeURIComponent(q.level) + '/' + encodeURIComponent(q.id) + '">' +
+            (dotOf(q.id) ? '<span class="qdot-lg ' + dotOf(q.id) + '"></span>' : '') +
+            '<div class="body"><strong>' + esc((q.question.text || '').slice(0, 42)) + '…</strong>' +
+            '<span class="badge star">' + stars(q.star) + '</span></div></a>';
+        }).join('') + '</div></div>' : '') +
+      '<div class="card mt16"><h4>学完这节课</h4><ul class="clean small">' +
+      '<li>先读懂图文讲解，记住本课要点。</li>' +
+      '<li>独立完成 5 道练习，做错就看讲解再试。</li>' +
+      '<li>再去题库做这个知识点的难题，巩固提升。</li>' +
+      '</ul></div>';
+
+    return '' +
+      '<div class="crumb"><a href="#/courses">课程中心</a> / ' + esc(c ? c.name : l.categoryId) + '</div>' +
+      '<div class="page-head"><h1>' + esc(l.title || l.kp) + '</h1><p>' + esc(l.intro || '') + '</p></div>' +
+      '<div class="solve-grid"><div>' + main + '</div><div>' + side + '</div></div>';
+  }
+
+  function consolidateHtml(kp) {
+    var l = lessonOf(kp);
+    if (!l) return '<div class="small muted">这节课的图文巩固还在整理中。</div>';
+    return '<div class="consolidate">' +
+      (l.sections || []).map(function (s) {
+        return '<div class="cons-sec"><strong>' + esc(s.h || '') + '</strong>' +
+          (s.p ? '<p>' + nl2br(s.p) + '</p>' : '') + diagramHtml(s.diagram) + '</div>';
+      }).join('') +
+      ((l.keyPoints || []).length ? '<div class="key-box"><h5>记住这几点</h5><ul class="clean">' +
+        l.keyPoints.map(function (x) { return '<li>' + nl2br(x) + '</li>'; }).join('') + '</ul></div>' : '') +
+      '</div>';
   }
 
   function viewBank(level) {
@@ -555,6 +771,7 @@
       '<div class="mt16"><button class="btn btn-sm ' + (learned ? 'btn-soft' : 'btn-ghost') + ' btn-block" data-act="learn" data-kp="' + esc(q.knowledgePoint) + '">' +
         (learned ? '✓ 已学（点击取消）' : '标记为已学') + '</button></div>' +
       (slot >= 0 && rec ? '<div class="mt8"><button class="btn btn-sm btn-ghost btn-block" data-act="swap" data-slot="' + slot + '" data-level="' + esc(level) + '">换一个</button></div>' : '') +
+      (lessonOf(q.knowledgePoint) ? '<div class="mt8"><a class="btn btn-sm btn-soft btn-block" href="#/course/' + encodeURIComponent(q.knowledgePoint) + '">学这节课（图文+练习）</a></div>' : '') +
       '<div class="mt8"><a class="btn btn-sm btn-ghost btn-block" href="#/bank/' + encodeURIComponent(level) + '/' + encodeURIComponent(q.categoryId) + '">同类题目</a></div>' +
       '</div>' +
       '<div class="card mt16"><h4>做题小贴士</h4>' +
@@ -643,7 +860,8 @@
           '<li>换一个：知识点未学时可换题，换题结果同样当天固定。</li>' +
           '<li>我不会：点击后直接展示讲解、原题和举一反三，并记为「看过讲解」。</li>' +
           '<li>提交答案：自动判断对错，随后展示讲解、原题和举一反三。</li>' +
-          '<li>错题本：所有做错或看过讲解的题自动收录，可以在里面「再做一遍」，并附两道举一反三练习。</li>' +
+          '<li>知识点课程：每个知识点都有图文讲解和 5 道配套练习，看懂了再做题，学得更牢。讲解视频暂未录入，提供搜索关键词自行查找。</li>' +
+          '<li>错题本：所有做错或看过讲解的题自动收录，可以在里面「再做一遍」，并附两道举一反三练习；每道错题还能展开对应知识点的<strong>图文巩固</strong>。</li>' +
           '<li>状态点：没做不标点；做错标红点；做对标绿点；<strong>重做做对 + 两道举一反三全对 = 黄点（完全掌握）</strong>。</li>' +
         '</ul>' +
         '<div class="panel-title mt24"><span class="n">4</span> 数据保存在哪里</div>' +
@@ -726,6 +944,7 @@
     // 导航高亮
     var parts = parseRoute();
     var view = parts[0] || 'home';
+    if (view === 'course') view = 'courses';
     $$('.site-nav a').forEach(function (a) { a.classList.remove('active'); });
     var nav = $('.site-nav a[data-nav="' + view + '"]');
     if (nav) nav.classList.add('active');
@@ -795,6 +1014,50 @@
     if (!el) return;
     var act = el.getAttribute('data-act');
     if (act === 'level') { navTo('bank/' + el.getAttribute('data-level')); return; }
+    if (act === 'course-cat') {
+      var cc = el.getAttribute('data-cat');
+      navTo(cc ? 'courses/' + cc : 'courses');
+      return;
+    }
+    if (act === 'course-submit') {
+      var ckp = el.getAttribute('data-kp');
+      var ci = parseInt(el.getAttribute('data-i'), 10);
+      var lesson = lessonOf(ckp);
+      if (!lesson || !lesson.practice[ci]) return;
+      var cp = lesson.practice[ci];
+      var cinput = $('#cp_' + ci);
+      var cv = cinput ? cinput.value : '';
+      if (!String(cv).trim()) { toast('请先填写答案'); return; }
+      var pq = { answer: { type: cp.type || 'text', correct: cp.ans, accept: cp.accept || [] } };
+      var cok = judge(pq, cv);
+      recordCourseAnswer(ckp, ci, cok, cv);
+      render();
+      toast(cok ? '答对了！' : '没答对，看看下面的讲解再试一次');
+      return;
+    }
+    if (act === 'copy-kw') {
+      var kw = el.getAttribute('data-kw') || '';
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(kw).then(function () { toast('关键词已复制：' + kw); });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = kw; document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+          toast('关键词已复制：' + kw);
+        }
+      } catch (err) { toast('复制失败，请手动选择关键词'); }
+      return;
+    }
+    if (act === 'toggle-cons') {
+      var cons = document.getElementById(el.getAttribute('data-cons'));
+      if (cons) {
+        var opening = cons.style.display === 'none';
+        cons.style.display = opening ? '' : 'none';
+        el.textContent = opening ? '收起巩固 ▴' : '知识点巩固 ▾';
+      }
+      return;
+    }
     if (act === 'swap') {
       swapQuestion(el.getAttribute('data-level') || currentLevel(), parseInt(el.getAttribute('data-slot'), 10));
       return;
@@ -871,6 +1134,8 @@
     switch (view) {
       case 'checkin': html = viewCheckin(); break;
       case 'wrong': html = viewWrongBook(); break;
+      case 'courses': html = viewCourses(parts[1]); break;
+      case 'course': html = viewCourse(parts[1] ? decodeURIComponent(parts[1]) : ''); break;
       case 'bank': html = parts[2] ? viewQuestions(parts[1], parts[2]) : viewBank(parts[1]); break;
       case 'q': html = viewSolve(parts[1], parts[2]); break;
       case 'add': html = viewAdd(); break;
