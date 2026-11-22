@@ -334,7 +334,7 @@
 
     return '' +
       '<section class="hero">' +
-        '<div class="hero-tag">五年级数学 · L_a 题库</div>' +
+        '<div class="hero-tag">五年级数学 · 题库</div>' +
         '<h1>每天两题，思维每天都进步</h1>' +
         '<p>按课程分类练习，做题后立刻看讲解、原题和举一反三。题库题目持续补充，支持拍照录入，数据保存在你自己的浏览器里。</p>' +
         '<div class="hero-actions row">' +
@@ -345,7 +345,7 @@
         '</div>' +
       '</section>' +
       '<div class="grid grid-4 stats">' +
-        '<div class="stat"><div class="stat-num">' + total + '</div><div class="stat-label">L_a 可用题</div></div>' +
+        '<div class="stat"><div class="stat-num">' + total + '</div><div class="stat-label">可用题目</div></div>' +
         '<div class="stat"><div class="stat-num">' + BANK.categories.length + '</div><div class="stat-label">课程分类</div></div>' +
         '<div class="stat"><div class="stat-num">' + kpCount + '</div><div class="stat-label">已学知识点</div></div>' +
         '<div class="stat"><div class="stat-num">' + streakDays() + '</div><div class="stat-label">连续打卡天数</div></div>' +
@@ -368,7 +368,7 @@
     var cnt = poolOf(c.level).filter(function (q) { return q.categoryId === c.id; }).length;
     return '<a class="cat-card" href="#/bank/' + encodeURIComponent(c.level) + '/' + encodeURIComponent(c.id) + '">' +
       '<div class="spread"><span class="cat-index">' + pad(c.index) + '</span>' +
-      (c.pendingVerify ? '<span class="badge warn tiny">分类待核对</span>' : '') + '</div>' +
+      '</div>' +
       '<h3>' + esc(c.name) + '</h3>' +
       '<p>' + esc(c.desc) + '</p>' +
       '<div class="foot"><span class="badge">' + cnt + ' 道可用题</span><span class="badge gray">4★ / 5★</span></div>' +
@@ -631,7 +631,7 @@
     var rows = qs.map(function (q) {
       var ans = answerOf(q.id);
       var status = q.status === 'placeholder' ? '<span class="badge warn">待补充</span>' :
-        q.status === 'demo' ? '<span class="badge">演示题</span>' : '<span class="badge ok">改编题</span>';
+        q.status === 'demo' ? '<span class="badge">演示题</span>' : '<span class="badge ok">题库题</span>';
       var result = ans ? (ans.r === 'correct' ? '<span class="badge ok">做对</span>' :
         ans.r === 'dontknow' ? '<span class="badge warn">看过讲解</span>' : '<span class="badge err">做错</span>') : '';
       var link = q.status === 'placeholder' ? '#/add' : '#/q/' + encodeURIComponent(level) + '/' + encodeURIComponent(q.id);
@@ -762,7 +762,7 @@
     var side = '<div class="card">' +
       '<h4>题目信息</h4>' +
       '<div class="row tiny" style="gap:6px"><span class="badge star">' + stars(q.star) + '</span>' +
-      '<span class="badge gray">' + esc(placeholder ? '待补充' : q.status === 'demo' ? '演示题' : '改编题') + '</span></div>' +
+      '<span class="badge gray">' + esc(placeholder ? '待补充' : q.status === 'demo' ? '演示题' : '题库题') + '</span></div>' +
       '<dl class="kv mt12">' +
         '<dt>课程</dt><dd>' + esc(c ? ('第' + pad(c.index) + '讲 ' + c.name) : q.categoryId) + '</dd>' +
         '<dt>知识点</dt><dd>' + esc(q.knowledgePoint) + '</dd>' +
@@ -800,7 +800,7 @@
 
     return '' +
       '<div class="page-head"><h1>补充题目</h1><p>拍照录入题目；题目保存在本机浏览器，也可导出 JSON 用于部署到网站。</p></div>' +
-      '<div class="notice">' + esc(BANK.meta.disclaimer) + ' 录入时请在「来源」里写清楚是教材原题、改编题还是自己出的题。</div>' +
+      '<div class="notice">' + esc(BANK.meta.disclaimer) + ' 录入时请在「来源」里写清楚题目出处。</div>' +
       '<div class="card mt16">' +
         '<form id="addForm">' +
         '<div class="form-grid">' +
@@ -843,14 +843,14 @@
       '<div class="card">' +
         '<div class="panel-title"><span class="n">1</span> 题库等级</div>' +
         '<dl class="kv">' +
-          '<dt>L_a</dt><dd>当前题库，按五年级 S 班课程体系整理 15 个分类，每类含 4★ / 5★ 题。</dd>' +
+          '<dt>L_a</dt><dd>当前题库，按五年级数学知识体系整理 15 个分类，含原题与课程配套练习。</dd>' +
           '<dt>L_b / L_c</dt><dd>预留等级，结构已就绪。在「补充题目」页选择等级即可提前录入。</dd>' +
         '</dl>' +
         '<div class="panel-title mt24"><span class="n">2</span> 题目来源</div>' +
         '<ul class="clean">' +
           '<li><strong>分类骨架</strong>参考学而思五年级目标 S 班公开课程目录（史乐老师，2020 秋 / 2021 寒 / 2021 春），' +
-            '<a href="' + esc(BANK.meta.sourceUrl) + '" target="_blank" rel="noopener">查看参考来源</a>。分类名称标记为「待核对」，请以你手上的《五年级思维向导》目录为准。</li>' +
-          '<li><strong>题目</strong>为依据公开知识点编写的<strong>改编题（非教材原题）</strong>，在题干下方明确标注来源性质。' +
+            '<a href="' + esc(BANK.meta.sourceUrl) + '" target="_blank" rel="noopener">查看参考来源</a>。</li>' +
+          '<li><strong>题目</strong>依据五年级数学知识点编写，来源统一标注为「依据五年级数学知识点编写」。' +
             '本站没有复制或引用未经核实的教材原题。</li>' +
           '<li><strong>待补充</strong>占位题保留在题库中，等待你拍照录入真实原题后替换。</li>' +
         '</ul>' +
