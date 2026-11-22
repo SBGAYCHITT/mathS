@@ -243,6 +243,35 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .status-dot.done { background: var(--ok); }
 .status-dot.dontknow { background: var(--warn); }
 
+/* ---------- 错题本四色状态点 ---------- */
+.qdot {
+  width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+  flex: 0 0 auto; vertical-align: middle;
+}
+.qdot.red { background: #ef4444; box-shadow: 0 0 0 2px #fee2e2; }
+.qdot.green { background: #22c55e; box-shadow: 0 0 0 2px #dcfce7; }
+.qdot.yellow { background: #f59e0b; box-shadow: 0 0 0 2px #fef3c7; }
+.qdot-lg { width: 13px; height: 13px; border-radius: 50%; flex: 0 0 auto; margin-top: 3px; }
+.qdot-lg.red { background: #ef4444; box-shadow: 0 0 0 3px #fee2e2; }
+.qdot-lg.green { background: #22c55e; box-shadow: 0 0 0 3px #dcfce7; }
+.qdot-lg.yellow { background: #f59e0b; box-shadow: 0 0 0 3px #fef3c7; }
+.qdot-lg.none { background: transparent; box-shadow: none; }
+.badge.mastered { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+.wrong-row { align-items: center; }
+.wrong-row h4 { font-size: 14px; }
+
+/* ---------- 举一反三练习区 ---------- */
+.drills-card .panel-title { justify-content: flex-start; }
+.drill-list { display: grid; gap: 12px; margin-top: 8px; }
+.drill-item {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 13px 14px; background: var(--bg-soft);
+}
+.drill-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+.drill-n { font-weight: 700; font-size: 13.5px; color: var(--blue-700); }
+.drill-input { max-width: 320px; }
+.notice.mt12 { margin-top: 12px; }
+
 .notice {
   border-radius: var(--radius);
   border: 1px solid var(--blue-100);

@@ -49,9 +49,10 @@
   }
 
   var custom = getK(K.custom, []);
-  var progress = getK(K.progress, { learned: {}, answers: {} });
+  var progress = getK(K.progress, { learned: {}, answers: {}, states: {} });
   if (!progress.learned) progress.learned = {};
   if (!progress.answers) progress.answers = {};
+  if (!progress.states) progress.states = {};
 
   function allQuestions() { return BANK.questions.concat(custom); }
   function qById(id) {
@@ -80,8 +81,64 @@
   function answerOf(id) { return progress.answers[id]; }
   function recordAnswer(id, r) {
     progress.answers[id] = { r: r, ts: Date.now() };
+    var s = stateOf(id);
+    s.attempts.push({ r: r, ts: Date.now() });
     setK(K.progress, progress);
     checkDailyDone();
+  }
+
+  /* ---------- 错题本 / 四色状态点 ----------
+     状态点语义：
+       不标   —— 还没做过
+       红点   —— 做错 / 不会（最近一次未答对）
+       绿点   —— 做对了（还没达成黄点条件）
+       黄点   —— 曾经做错 → 重做做对 + 两道举一反三全对（已掌握）
+  */
+  function stateOf(id) {
+    if (!progress.states[id]) progress.states[id] = { attempts: [], drills: [null, null] };
+    var s = progress.states[id];
+    if (!s.attempts) s.attempts = [];
+    if (!s.drills || s.drills.length < 2) s.drills = [s.drills && s.drills[0], s.drills && s.drills[1]];
+    return s;
+  }
+  function everWrong(id) {
+    var s = progress.states[id];
+    if (s && s.attempts.length) {
+      return s.attempts.some(function (x) { return x.r === 'wrong' || x.r === 'dontknow'; });
+    }
+    // 兼容旧数据：只有 answers 没有 attempts
+    var a = answerOf(id);
+    return !!(a && (a.r === 'wrong' || a.r === 'dontknow'));
+  }
+  function drillsAllRight(q) {
+    var s = progress.states[q.id];
+    var ds = (q.drills || []).length;
+    if (!s || ds < 2) return false;
+    return s.drills[0] === true && s.drills[1] === true;
+  }
+  function dotOf(id) {
+    var s = progress.states[id];
+    var a = answerOf(id);
+    if (!s || !s.attempts.length) return a ? (a.r === 'correct' ? 'green' : 'red') : '';
+    var last = s.attempts[s.attempts.length - 1];
+    var q = qById(id);
+    if (everWrong(id) && last.r === 'correct' && q && drillsAllRight(q)) return 'yellow';
+    return last.r === 'correct' ? 'green' : 'red';
+  }
+  function dotHtml(id, withLabel) {
+    var st = dotOf(id);
+    if (!st) return '';
+    var label = st === 'yellow' ? '已掌握' : st === 'green' ? '做对' : '错题';
+    return '<span class="qdot ' + st + '" title="' + label + '"></span>' +
+      (withLabel ? '<span class="small muted">' + label + '</span>' : '');
+  }
+  function wrongQuestions() {
+    return allQuestions().filter(function (q) { return everWrong(q.id); });
+  }
+  function recordDrill(id, idx, ok) {
+    var s = stateOf(id);
+    s.drills[idx] = !!ok;
+    setK(K.progress, progress);
   }
 
   /* ---------- 打卡（当天固定 2 题） ---------- */
@@ -166,7 +223,8 @@
       .toLowerCase();
   }
   function judge(q, input) {
-    var a = q.answer || {};
+    // 兼容题目对象（带 answer 字段）与练习对象（correct/accept 平铺）
+    var a = q.answer || (q.correct !== undefined ? q : {});
     if (a.type === 'choice') {
       return normalize(input) === normalize(a.correct);
     }
@@ -206,13 +264,14 @@
       var q = qById(id);
       if (!q) return '';
       var ans = answerOf(id);
+      var dot = dotOf(id);
       var st = ans ? (ans.r === 'correct' ? 'ok' : ans.r === 'dontknow' ? 'dontknow' : 'err') : '';
       return '<article class="card daily-card">' +
         '<div class="top"><span class="slot">第 ' + (i + 1) + ' 题</span>' +
         '<span class="badge star">' + stars(q.star) + '</span>' +
-        '<span class="status-dot ' + st + '"></span>' +
-        (ans ? '<span class="badge ' + (st === 'ok' ? 'ok' : st === 'err' ? 'err' : 'warn') + '">' +
-          (st === 'ok' ? '已做对' : st === 'err' ? '做错了' : '看过讲解') + '</span>' : '<span class="badge gray">未作答</span>') +
+        (dot ? '<span class="qdot ' + dot + '"></span>' : '') +
+        (ans ? '<span class="badge ' + (dot === 'yellow' ? 'mastered' : st === 'ok' ? 'ok' : st === 'err' ? 'err' : 'warn') + '">' +
+          (dot === 'yellow' ? '已掌握' : st === 'ok' ? '已做对' : st === 'err' ? '做错了' : '看过讲解') + '</span>' : '<span class="badge gray">未作答</span>') +
         '</div>' +
         '<h3>' + esc((q.question.text || '').slice(0, 54)) + ((q.question.text || '').length > 54 ? '…' : '') + '</h3>' +
         '<div class="meta">' + esc(catById(q.categoryId) ? catById(q.categoryId).name : q.categoryId) + ' · ' + esc(q.knowledgePoint) + '</div>' +
@@ -228,6 +287,7 @@
         '<div class="hero-actions row">' +
           '<a class="btn btn-lg" href="#/checkin">开始今日打卡</a>' +
           '<a class="btn btn-lg btn-ghost" href="#/bank">浏览题库</a>' +
+          (wrongQuestions().length ? '<a class="btn btn-lg btn-ghost" href="#/wrong">错题本（' + wrongQuestions().length + '）</a>' : '') +
         '</div>' +
       '</section>' +
       '<div class="grid grid-4 stats">' +
@@ -288,6 +348,49 @@
       '<a class="btn btn-ghost btn-sm" href="#/about">查看说明</a></div></div>';
   }
 
+  function viewWrongBook() {
+    var qs = wrongQuestions();
+    var mastered = qs.filter(function (q) { return dotOf(q.id) === 'yellow'; }).length;
+    var pending = qs.length - mastered;
+    var rows = qs.map(function (q) {
+      var st = dotOf(q.id);
+      var label = st === 'yellow' ? '已掌握' : st === 'green' ? '做对了' : '待攻克';
+      var cls = st === 'yellow' ? 'ok' : st === 'green' ? 'ok' : 'err';
+      var c = catById(q.categoryId);
+      return '<article class="q-row wrong-row">' +
+        '<span class="qdot-lg ' + (st || 'red') + '"></span>' +
+        '<div class="body">' +
+          '<div class="row tiny" style="gap:6px"><span class="badge star">' + stars(q.star) + '</span>' +
+          '<span class="badge ' + cls + '">' + label + '</span>' +
+          '<span class="badge gray">' + esc(c ? c.name : q.categoryId) + '</span></div>' +
+          '<h4>' + esc((q.question.text || '').slice(0, 90)) + ((q.question.text || '').length > 90 ? '…' : '') + '</h4>' +
+          '<p>' + esc(q.knowledgePoint) + ' · ' + dotProgressText(q) + '</p>' +
+        '</div>' +
+        '<a class="btn btn-sm" href="#/q/' + encodeURIComponent(q.level) + '/' + encodeURIComponent(q.id) + '">' +
+          (st === 'yellow' ? '再看一遍' : '再做一遍') + '</a>' +
+      '</article>';
+    }).join('');
+
+    return '' +
+      '<div class="page-head"><h1>错题本</h1><p>所有做错或看过讲解的题都在这里。重做做对，再把两道举一反三都做对，就能点亮黄点。</p></div>' +
+      '<div class="grid grid-3 stats">' +
+        '<div class="stat"><div class="stat-num">' + qs.length + '</div><div class="stat-label">错题总数</div></div>' +
+        '<div class="stat"><div class="stat-num">' + pending + '</div><div class="stat-label">待攻克</div></div>' +
+        '<div class="stat"><div class="stat-num">' + mastered + '</div><div class="stat-label">已掌握（黄点）</div></div>' +
+      '</div>' +
+      '<div class="notice mt16"><span class="qdot red"></span> 红点＝还没攻克　<span class="qdot green"></span> 绿点＝最近做对了　' +
+      '<span class="qdot yellow"></span> 黄点＝重做做对 + 两道举一反三全对（真正掌握）</div>' +
+      '<div class="data-list mt16">' + (rows || '<div class="empty"><h3>还没有错题</h3><p>去做几道题吧，做错的题会自动收进这里。</p><a class="btn" href="#/checkin">开始打卡</a></div>') + '</div>';
+  }
+
+  function dotProgressText(q) {
+    var s = progress.states[q.id];
+    if (!s) return '还没重做';
+    var d0 = s.drills[0] === true ? '✓' : '·';
+    var d1 = s.drills[1] === true ? '✓' : '·';
+    return '举一反三 ' + d0 + ' ' + d1;
+  }
+
   function viewBank(level) {
     level = levelById(level) ? level : 'L_a';
     var tabs = BANK.levels.map(function (l) {
@@ -317,6 +420,7 @@
         ans.r === 'dontknow' ? '<span class="badge warn">看过讲解</span>' : '<span class="badge err">做错</span>') : '';
       var link = q.status === 'placeholder' ? '#/add' : '#/q/' + encodeURIComponent(level) + '/' + encodeURIComponent(q.id);
       return '<a class="q-row" href="' + link + '">' +
+        (dotOf(q.id) ? '<span class="qdot-lg ' + dotOf(q.id) + '"></span>' : '<span class="qdot-lg none"></span>') +
         '<span class="badge star">' + stars(q.star) + '</span>' +
         '<div class="body"><div class="row tiny" style="gap:6px">' + status + result +
         '<span class="badge gray">' + esc(q.knowledgePoint) + '</span></div>' +
@@ -366,6 +470,38 @@
       '</div></div>';
   }
 
+  // 错题重做时的两道举一反三练习（可提交判分）
+  function drillsHtml(q) {
+    var drills = q.drills || [];
+    if (!drills.length) return '';
+    var s = stateOf(q.id);
+    var solved = s.drills.filter(function (x) { return x === true; }).length;
+    var allOk = drillsAllRight(q);
+    var rows = drills.map(function (d, i) {
+      var ok = s.drills[i] === true;
+      var wrong = s.drills[i] === false;
+      return '<div class="drill-item">' +
+        '<div class="drill-head"><span class="drill-n">举一反三 ' + (i + 1) + '</span>' +
+        (ok ? '<span class="badge ok">✓ 做对</span>' : wrong ? '<span class="badge err">✕ 再做一次</span>' : '<span class="badge gray">待作答</span>') + '</div>' +
+        (d.text ? '<div class="q-text">' + nl2br(d.text) + '</div>' : mediaHtml(d)) +
+        (ok ? '' :
+          '<div class="row mt8">' +
+            '<input class="input-answer drill-input" type="text" id="drill_' + i + '" placeholder="输入你的答案" />' +
+            '<button class="btn btn-sm" data-act="drill" data-q="' + esc(q.id) + '" data-i="' + i + '">提交</button>' +
+          '</div>' +
+          (d.hint ? '<div class="small muted mt8">提示：' + esc(d.hint) + '</div>' : '')) +
+      '</div>';
+    }).join('');
+    return '<div class="card mt16 drills-card">' +
+      '<div class="panel-title"><span class="n">3</span> 举一反三练习 ' +
+        '<span class="badge ' + (allOk ? 'ok' : '') + '">' + solved + ' / ' + drills.length + ' 做对</span></div>' +
+      '<p class="small muted">把两道都做对，配合上面的重做做对，这道题就能点亮 <span class="qdot yellow"></span> 黄点。</p>' +
+      '<div class="drill-list">' + rows + '</div>' +
+      (allOk ? '<div class="notice mt12">两道举一反三都做对了，厉害！' +
+        (dotOf(q.id) === 'yellow' ? ' 这道题已点亮黄点（完全掌握）。' : ' 重做做对后即可点亮黄点。') + '</div>' : '') +
+      '</div>';
+  }
+
   function answerArea(q) {
     var a = q.answer || {};
     var id = q.id;
@@ -404,7 +540,8 @@
             '</div>' +
           '</div>' +
         '</div>' +
-        (ans ? resultHtml(q, ans.r) : '');
+        (ans ? resultHtml(q, ans.r) : '') +
+        (ans && everWrong(q.id) ? drillsHtml(q) : '');
 
     var side = '<div class="card">' +
       '<h4>题目信息</h4>' +
@@ -506,6 +643,8 @@
           '<li>换一个：知识点未学时可换题，换题结果同样当天固定。</li>' +
           '<li>我不会：点击后直接展示讲解、原题和举一反三，并记为「看过讲解」。</li>' +
           '<li>提交答案：自动判断对错，随后展示讲解、原题和举一反三。</li>' +
+          '<li>错题本：所有做错或看过讲解的题自动收录，可以在里面「再做一遍」，并附两道举一反三练习。</li>' +
+          '<li>状态点：没做不标点；做错标红点；做对标绿点；<strong>重做做对 + 两道举一反三全对 = 黄点（完全掌握）</strong>。</li>' +
         '</ul>' +
         '<div class="panel-title mt24"><span class="n">4</span> 数据保存在哪里</div>' +
         '<p class="small">所有打卡、答题、知识点状态和补充题目都保存在当前浏览器的 localStorage 中，不会上传到服务器。' +
@@ -684,6 +823,19 @@
       render();
       return;
     }
+    if (act === 'drill') {
+      var dq = qById(el.getAttribute('data-q'));
+      var di = parseInt(el.getAttribute('data-i'), 10);
+      if (!dq || !dq.drills || !dq.drills[di]) return;
+      var df = $('#drill_' + di);
+      var din = df ? df.value : '';
+      if (!String(din).trim()) { toast('请先填写答案'); return; }
+      var dok = judge(dq.drills[di], din);
+      recordDrill(dq.id, di, dok);
+      render();
+      toast(dok ? (drillsAllRight(dq) ? '两道举一反三都做对了！' : '答对了，继续下一道') : '没答对，再看讲解试试');
+      return;
+    }
     if (act === 'del-custom') {
       var id = el.getAttribute('data-id');
       custom = custom.filter(function (q) { return q.id !== id; });
@@ -718,6 +870,7 @@
     var html;
     switch (view) {
       case 'checkin': html = viewCheckin(); break;
+      case 'wrong': html = viewWrongBook(); break;
       case 'bank': html = parts[2] ? viewQuestions(parts[1], parts[2]) : viewBank(parts[1]); break;
       case 'q': html = viewSolve(parts[1], parts[2]); break;
       case 'add': html = viewAdd(); break;
